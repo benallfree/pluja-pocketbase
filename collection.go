@@ -3,6 +3,7 @@ package pocketbase
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/url"
 
 	"github.com/duke-git/lancet/v2/convertor"
@@ -257,4 +258,29 @@ func (c *Collection[T]) OneWithParams(id string, params ParamsList) (T, error) {
 		return response, fmt.Errorf("[one] can't unmarshal response, err %w", err)
 	}
 	return response, nil
+}
+
+func (c *Collection[T]) Subscribe(targets ...string) (*FilteredStream[T], error) {
+	stream, err := c.Client.Subscribe(c.Name, targets...)
+	if err != nil {
+		return nil, err
+	}
+	typedStream := &FilteredStream[T]{
+		C:           make(chan Event[T]),
+		Unsubscribe: stream.Unsubscribe,
+	}
+	go func() {
+		defer func() {
+			log.Printf("closing typed channel")
+			close(typedStream.C)
+		}()
+		for e := range stream.C {
+			typedStream.C <- Event[T]{
+				Action: e.Action,
+				Record: any(e.Record).(T),
+				Error:  e.Error,
+			}
+		}
+	}()
+	return typedStream, nil
 }
