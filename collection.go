@@ -275,9 +275,17 @@ func (c *Collection[T]) Subscribe(targets ...string) (*FilteredStream[T], error)
 			close(typedStream.C)
 		}()
 		for e := range stream.C {
+			var data T
+			jsonBytes, err := json.Marshal(e.Record)
+			if err != nil {
+				log.Printf("can't marshal record: %v", err)
+			}
+			if err := json.Unmarshal(jsonBytes, &data); err != nil {
+				log.Printf("can't unmarshal record: %v", err)
+			}
 			typedStream.C <- Event[T]{
 				Action: e.Action,
-				Record: any(e.Record).(T),
+				Record: data,
 				Error:  e.Error,
 			}
 		}
