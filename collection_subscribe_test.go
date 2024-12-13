@@ -1,6 +1,7 @@
 package pocketbase
 
 import (
+	"log"
 	"net"
 	"net/http"
 	"testing"
@@ -22,9 +23,8 @@ func TestCollection_Subscribe(t *testing.T) {
 		return
 	}
 	defer stream.Unsubscribe()
-	<-stream.Ready()
 
-	ch := stream.Events()
+	ch := stream.C
 
 	t.Run("subscribe event: create", func(t *testing.T) {
 		resp, err := collection.Create(defaultBody)
@@ -86,9 +86,8 @@ func TestCollection_Unsubscribe(t *testing.T) {
 		t.Error(err)
 		return
 	}
-	<-stream.Ready()
 
-	ch := stream.Events()
+	ch := stream.C
 
 	resp, err := collection.Create(defaultBody)
 	if err != nil {
@@ -99,6 +98,8 @@ func TestCollection_Unsubscribe(t *testing.T) {
 	assert.Equal(t, resp.ID, e.Record["id"])
 
 	stream.Unsubscribe()
+
+	log.Printf("after Unsubscribe")
 
 	if err := collection.Delete(resp.ID); err != nil {
 		t.Error(err)
@@ -122,7 +123,10 @@ func TestCollection_RealtimeReconnect(t *testing.T) {
 			conn, err := net.Dial(network, addr)
 			if err == nil {
 				// Simulate pocketbase closing realtime connection after 5m of inactivity
-				time.AfterFunc(3*time.Second, func() { conn.Close() })
+				time.AfterFunc(3*time.Second, func() {
+					log.Printf("forcibly closing connection\n")
+					conn.Close()
+				})
 			}
 			return conn, err
 		},
@@ -138,7 +142,6 @@ func TestCollection_RealtimeReconnect(t *testing.T) {
 		return
 	}
 	defer stream.Unsubscribe()
-	<-stream.Ready()
 
 	var got = false
 	time.AfterFunc(13*time.Second, func() {
@@ -153,7 +156,7 @@ func TestCollection_RealtimeReconnect(t *testing.T) {
 		}
 	})
 
-	for range stream.Events() {
+	for range stream.C {
 		got = true
 		break
 	}

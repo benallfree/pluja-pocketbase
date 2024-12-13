@@ -1,6 +1,7 @@
 package pocketbase
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,14 +17,15 @@ var ErrInvalidResponse = errors.New("invalid response")
 
 type (
 	Client struct {
-		client     *resty.Client
-		url        string
-		authorizer authStore
-		token      string
-		sseDebug   bool
-		restDebug  bool
+		client          *resty.Client
+		url             string
+		authorizer      authStore
+		token           string
+		restDebug       bool
+		realtimeManager *RealtimeConnectionManager
 	}
-	ClientOption func(*Client)
+	ClientOption  func(*Client)
+	RequestOption func(*resty.Request)
 )
 
 func EnvIsTruthy(key string) bool {
@@ -43,6 +45,8 @@ func NewClient(url string, opts ...ClientOption) *Client {
 		url:        url,
 		authorizer: authorizeNoOp{},
 	}
+	c.realtimeManager = NewRealtimeConnectionManager(c)
+
 	opts = append([]ClientOption{}, opts...)
 	if EnvIsTruthy("REST_DEBUG") {
 		opts = append(opts, WithRestDebug())
@@ -67,7 +71,7 @@ func WithRestDebug() ClientOption {
 
 func WithSseDebug() ClientOption {
 	return func(c *Client) {
-		c.sseDebug = true
+		c.realtimeManager.debug = true
 	}
 }
 
@@ -171,4 +175,36 @@ func (c *Client) Files() Files {
 	return Files{
 		Client: c,
 	}
+}
+
+func (c *Client) Subscribe(collectionName string, targets ...string) (*FilteredStream[map[string]any], error) {
+	if err := c.Authorize(); err != nil {
+		return nil, err
+	}
+
+	return c.realtimeManager.Subscribe(collectionName, targets...)
+}
+
+func (c *Client) Request(modifiers ...RequestOption) *resty.Request {
+	req := c.client.R()
+	for _, modifier := range modifiers {
+		modifier(req)
+	}
+	return req
+}
+
+func WithContext(ctx context.Context) RequestOption {
+	return func(req *resty.Request) {
+		req.SetContext(ctx)
+	}
+}
+
+func WithDoNotParseResponse(souldNotParse bool) RequestOption {
+	return func(req *resty.Request) {
+		req.SetDoNotParseResponse(souldNotParse)
+	}
+}
+
+func (c *Client) BaseUrl() string {
+	return c.url
 }
