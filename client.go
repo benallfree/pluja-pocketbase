@@ -5,15 +5,19 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-	"strings"
 	"time"
 
+	"github.com/caarlos0/env/v11"
 	"github.com/go-resty/resty/v2"
 	"github.com/pocketbase/pocketbase/core"
 )
 
 var ErrInvalidResponse = errors.New("invalid response")
+
+type EnvConfig struct {
+	RESTDebug bool `env:"REST_DEBUG"`
+	SSEDebug  bool `env:"SSE_DEBUG"`
+}
 
 type (
 	Client struct {
@@ -28,12 +32,12 @@ type (
 	RequestOption func(*resty.Request)
 )
 
-func EnvIsTruthy(key string) bool {
-	val := strings.ToLower(os.Getenv(key))
-	return val == "1" || val == "true" || val == "yes"
-}
-
 func NewClient(url string, opts ...ClientOption) *Client {
+	cfg, err := env.ParseAs[EnvConfig]()
+	if err != nil {
+		panic(fmt.Sprintf("Failed to parse environment variables: %v", err))
+	}
+
 	client := resty.New()
 	client.
 		SetRetryCount(3).
@@ -48,10 +52,10 @@ func NewClient(url string, opts ...ClientOption) *Client {
 	c.realtimeManager = NewRealtimeConnectionManager(c)
 
 	opts = append([]ClientOption{}, opts...)
-	if EnvIsTruthy("REST_DEBUG") {
+	if cfg.RESTDebug {
 		opts = append(opts, WithRestDebug())
 	}
-	if EnvIsTruthy("SSE_DEBUG") {
+	if cfg.SSEDebug {
 		opts = append(opts, WithSseDebug())
 	}
 
