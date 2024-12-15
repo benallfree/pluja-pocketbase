@@ -260,35 +260,59 @@ func (c *Collection[T]) OneWithParams(id string, params ParamsList) (T, error) {
 	return response, nil
 }
 
-func (c *Collection[T]) Subscribe(targets ...string) (*FilteredStream[T], error) {
-	stream, err := c.Client.Subscribe(c.Name, targets...)
+type RecordBase struct {
+	CollectionName string `json:"collectionName"`
+	CollectionId   string `json:"collectionId"`
+	Id             string `json:"id"`
+}
+
+type TypedEvent[T any] struct {
+	Action string `json:"action"`
+	Record T      `json:"record"`
+	Error  error  `json:"error"`
+}
+
+type TypedStream[T any] struct {
+	C           chan TypedEvent[T]
+	Unsubscribe func()
+}
+
+func (c *Collection[T]) Subscribe(targets ...string) (*TypedStream[T], error) {
+	eventStream, err := c.Client.Subscribe(c.Name, targets...)
 	if err != nil {
 		return nil, err
 	}
-	typedStream := &FilteredStream[T]{
-		C:           make(chan Event[T]),
-		Unsubscribe: stream.Unsubscribe,
+	eventCh := make(chan TypedEvent[T])
+	stream := &TypedStream[T]{
+		C: eventCh,
+		Unsubscribe: func() {
+			eventStream.Unsubscribe()
+		},
 	}
+
 	go func() {
 		defer func() {
 			log.Printf("closing typed channel")
-			close(typedStream.C)
+			close(stream.C)
 		}()
-		for e := range stream.C {
-			var data T
+		for e := range eventStream.C {
 			jsonBytes, err := json.Marshal(e.Record)
 			if err != nil {
 				log.Printf("can't marshal record: %v", err)
+				continue
 			}
-			if err := json.Unmarshal(jsonBytes, &data); err != nil {
+			typedRecord := new(T)
+			if err := json.Unmarshal(jsonBytes, &typedRecord); err != nil {
 				log.Printf("can't unmarshal record: %v", err)
+				continue
 			}
-			typedStream.C <- Event[T]{
+			typedEvent := TypedEvent[T]{
 				Action: e.Action,
-				Record: data,
+				Record: *typedRecord,
 				Error:  e.Error,
 			}
+			stream.C <- typedEvent
 		}
 	}()
-	return typedStream, nil
+	return stream, nil
 }

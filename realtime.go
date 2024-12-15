@@ -15,10 +15,16 @@ import (
 )
 
 type (
+	Event struct {
+		Action string         `json:"action"`
+		Record map[string]any `json:"record"`
+		Error  error          `json:"error"`
+	}
+
 	RealtimeConnectionManager struct {
 		client            *Client
 		once              sync.Once
-		stream            *multicast.Channel[Event[map[string]any]]
+		stream            *multicast.Channel[Event]
 		lock              sync.RWMutex
 		counter           atomic.Int64
 		targets           sync.Map
@@ -27,15 +33,11 @@ type (
 		error             error
 		clientID          string
 		debug             bool
+		typeFactories     sync.Map
 	}
 
 	InitEvent[T any] struct {
 		ClientID string `json:"clientId"`
-	}
-	Event[T any] struct {
-		Action string `json:"action"`
-		Record T      `json:"record"`
-		Error  error  `json:"-"`
 	}
 
 	SubscriptionsSet struct {
@@ -43,18 +45,19 @@ type (
 		Subscriptions []string `json:"subscriptions"`
 	}
 
-	FilteredStream[T any] struct {
-		C           chan Event[T]
+	EventStream struct {
+		C           chan Event
 		Unsubscribe func()
 	}
 )
 
 func NewRealtimeConnectionManager(client *Client) *RealtimeConnectionManager {
 	return &RealtimeConnectionManager{
-		client:  client,
-		stream:  multicast.New[Event[map[string]any]](),
-		counter: atomic.Int64{},
-		targets: sync.Map{},
+		client:        client,
+		stream:        multicast.New[Event](),
+		counter:       atomic.Int64{},
+		targets:       sync.Map{},
+		typeFactories: sync.Map{},
 	}
 }
 
@@ -63,7 +66,7 @@ func (r *RealtimeConnectionManager) init() {
 	r.connectToRealtime()
 }
 
-func (r *RealtimeConnectionManager) Subscribe(collectionName string, targets ...string) (*FilteredStream[map[string]any], error) {
+func (r *RealtimeConnectionManager) Subscribe(collectionName string, targets ...string) (*EventStream, error) {
 	r.once.Do(r.init)
 
 	if len(targets) == 0 {
@@ -81,8 +84,8 @@ func (r *RealtimeConnectionManager) Subscribe(collectionName string, targets ...
 	}
 
 	closed := make(chan bool)
-	c := make(chan Event[map[string]any])
-	stream := &FilteredStream[map[string]any]{
+	c := make(chan Event)
+	stream := &EventStream{
 		C: c,
 		Unsubscribe: func() {
 			r.removeTarget(subscriptionID)
@@ -111,8 +114,7 @@ func (r *RealtimeConnectionManager) Subscribe(collectionName string, targets ...
 				return
 			case e, ok := <-l.C:
 				if !ok {
-					r.dbg("channel is closed from unsubscribe")
-					return
+					panic("evergreen channel is closed")
 				}
 				r.dbg(fmt.Sprintf("received event: %+v", e))
 				if isRecordInTargetList(e.Record, targets) {
@@ -260,7 +262,7 @@ func (r *RealtimeConnectionManager) connectToRealtime() error {
 }
 
 func (r *RealtimeConnectionManager) handleSSEEvent(ev eventsource.Event) {
-	var e Event[map[string]any]
+	var e Event
 	r.dbg(fmt.Sprintf("SSE event: %+v", ev))
 	e.Error = json.Unmarshal([]byte(ev.Data()), &e)
 	r.stream.C <- e

@@ -181,7 +181,7 @@ func (c *Client) Files() Files {
 	}
 }
 
-func (c *Client) Subscribe(collectionName string, targets ...string) (*FilteredStream[map[string]any], error) {
+func (c *Client) Subscribe(collectionName string, targets ...string) (*EventStream, error) {
 	if err := c.Authorize(); err != nil {
 		return nil, err
 	}
