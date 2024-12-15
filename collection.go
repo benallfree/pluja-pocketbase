@@ -263,6 +263,7 @@ func (c *Collection[T]) OneWithParams(id string, params ParamsList) (T, error) {
 type TypedEvent[T any] struct {
 	Action string
 	Record T
+	Fields map[string]any
 	Error  error
 }
 
@@ -303,6 +304,7 @@ func (c *Collection[T]) Subscribe(targets ...string) (*TypedStream[T], error) {
 			typedEvent := TypedEvent[T]{
 				Action: e.Action,
 				Record: *typedRecord,
+				Fields: e.Record,
 				Error:  e.Error,
 			}
 			stream.C <- typedEvent
