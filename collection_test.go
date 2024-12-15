@@ -119,7 +119,7 @@ func TestCollection_List(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			collection := Collection[RecordBase]{tt.client, tt.collection, defaultClient.url + "/api/collections/" + tt.collection}
+			collection := Collection[any]{tt.client, tt.collection, defaultClient.url + "/api/collections/" + tt.collection}
 			got, err := collection.List(tt.params)
 			assert.Equal(t, tt.wantErr, err != nil, err)
 			assert.Equal(t, tt.wantResult, got.TotalItems > 0)
@@ -127,23 +127,18 @@ func TestCollection_List(t *testing.T) {
 	}
 }
 
-type TestRecord struct {
-	RecordBase
-	Field string `json:"field"`
-}
-
 func TestCollection_Delete(t *testing.T) {
 	client := NewClient(defaultURL)
 	field := "value_" + time.Now().Format(time.StampMilli)
-	collection := Collection[TestRecord]{client, migrations.PostsPublic, client.url + "/api/collections/" + "collectionname"}
+	collection := Collection[any]{client, migrations.PostsPublic, client.url + "/api/collections/" + "collectionname"}
 
 	// delete non-existing item
 	err := collection.Delete("non_existing_id")
 	assert.Error(t, err)
 
 	// create temporary item
-	resultCreated, err := collection.Create(TestRecord{
-		Field: field,
+	resultCreated, err := collection.Create(map[string]any{
+		"field": field,
 	})
 	assert.NoError(t, err)
 	assert.NotEmpty(t, resultCreated.ID)

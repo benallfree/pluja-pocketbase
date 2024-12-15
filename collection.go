@@ -260,16 +260,10 @@ func (c *Collection[T]) OneWithParams(id string, params ParamsList) (T, error) {
 	return response, nil
 }
 
-type RecordBase struct {
-	CollectionName string `json:"collectionName"`
-	CollectionId   string `json:"collectionId"`
-	Id             string `json:"id"`
-}
-
 type TypedEvent[T any] struct {
-	Action string `json:"action"`
-	Record T      `json:"record"`
-	Error  error  `json:"error"`
+	Action string
+	Record T
+	Error  error
 }
 
 type TypedStream[T any] struct {
@@ -302,7 +296,7 @@ func (c *Collection[T]) Subscribe(targets ...string) (*TypedStream[T], error) {
 				continue
 			}
 			typedRecord := new(T)
-			if err := json.Unmarshal(jsonBytes, &typedRecord); err != nil {
+			if err := json.Unmarshal(jsonBytes, typedRecord); err != nil {
 				log.Printf("can't unmarshal record: %v", err)
 				continue
 			}
