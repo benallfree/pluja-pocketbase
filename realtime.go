@@ -25,7 +25,6 @@ type (
 		client            *Client
 		once              sync.Once
 		stream            *multicast.Channel[Event]
-		lock              sync.RWMutex
 		counter           atomic.Int64
 		targets           sync.Map
 		mergedTargets     []string
