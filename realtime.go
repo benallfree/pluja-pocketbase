@@ -16,9 +16,9 @@ import (
 
 type (
 	Event struct {
-		Action string         `json:"action"`
-		Record map[string]any `json:"record"`
-		Error  error          `json:"error"`
+		Action string          `json:"action"`
+		Record *map[string]any `json:"record"`
+		Error  error           `json:"error"`
 	}
 
 	RealtimeConnectionManager struct {
@@ -45,7 +45,7 @@ type (
 	}
 
 	EventStream struct {
-		C           chan Event
+		C           chan *Event
 		Unsubscribe func()
 	}
 )
@@ -83,7 +83,7 @@ func (r *RealtimeConnectionManager) Subscribe(collectionName string, targets ...
 	}
 
 	closed := make(chan bool)
-	c := make(chan Event)
+	c := make(chan *Event)
 	stream := &EventStream{
 		C: c,
 		Unsubscribe: func() {
@@ -118,7 +118,7 @@ func (r *RealtimeConnectionManager) Subscribe(collectionName string, targets ...
 				r.dbg(fmt.Sprintf("received event: %+v", e))
 				if isRecordInTargetList(e.Record, targets) {
 					r.dbg("sending event to stream")
-					stream.C <- e
+					stream.C <- &e
 				}
 			}
 		}
@@ -141,7 +141,7 @@ func (r *RealtimeConnectionManager) recalcMergedTargets() {
 }
 
 func (r *RealtimeConnectionManager) addTarget(collectionName string, targets ...string) (string, error) {
-	r.dbg(fmt.Sprintf("adding target: %s", collectionName))
+	r.dbg(fmt.Sprintf("adding targets to %s: %+v", collectionName, targets))
 
 	subscriptionID := fmt.Sprintf("%s_%d", collectionName, r.counter.Add(1))
 	r.targets.Store(subscriptionID, targets)
@@ -267,21 +267,21 @@ func (r *RealtimeConnectionManager) handleSSEEvent(ev eventsource.Event) {
 	r.stream.C <- e
 }
 
-func isRecordInTargetList(record map[string]any, targets []string) bool {
+func isRecordInTargetList(record *map[string]any, targets []string) bool {
 	log.Printf("checking record: %+v for targets: %+v\n", record, targets)
-	collectionName, ok := record["collectionName"].(string)
+	collectionName, ok := (*record)["collectionName"].(string)
 	if !ok {
 		return false
 	}
 	collectionNameMatch := slices.Contains(targets, collectionName)
 
-	collectionID, ok := record["collectionId"].(string)
+	collectionID, ok := (*record)["collectionId"].(string)
 	if !ok {
 		return false
 	}
 	collectionIDMatch := slices.Contains(targets, collectionID)
 
-	recordID, ok := record["id"].(string)
+	recordID, ok := (*record)["id"].(string)
 	if !ok {
 		return false
 	}

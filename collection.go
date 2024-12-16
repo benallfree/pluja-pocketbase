@@ -268,7 +268,7 @@ type TypedEvent[T any] struct {
 }
 
 type TypedStream[T any] struct {
-	C           chan TypedEvent[T]
+	C           chan *TypedEvent[T]
 	Unsubscribe func()
 }
 
@@ -277,7 +277,7 @@ func (c *Collection[T]) Subscribe(targets ...string) (*TypedStream[T], error) {
 	if err != nil {
 		return nil, err
 	}
-	eventCh := make(chan TypedEvent[T])
+	eventCh := make(chan *TypedEvent[T])
 	stream := &TypedStream[T]{
 		C: eventCh,
 		Unsubscribe: func() {
@@ -304,10 +304,10 @@ func (c *Collection[T]) Subscribe(targets ...string) (*TypedStream[T], error) {
 			typedEvent := TypedEvent[T]{
 				Action: e.Action,
 				Record: *typedRecord,
-				Fields: e.Record,
+				Fields: *e.Record,
 				Error:  e.Error,
 			}
-			stream.C <- typedEvent
+			stream.C <- &typedEvent
 		}
 	}()
 	return stream, nil
