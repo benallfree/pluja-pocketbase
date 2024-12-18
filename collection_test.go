@@ -119,7 +119,7 @@ func TestCollection_List(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			collection := Collection[any]{tt.client, tt.collection, defaultClient.url + "/api/collections/" + tt.collection}
+			collection := tt.client.Collection(tt.collection)
 			got, err := collection.List(tt.params)
 			assert.Equal(t, tt.wantErr, err != nil, err)
 			assert.Equal(t, tt.wantResult, got.TotalItems > 0)
@@ -130,7 +130,7 @@ func TestCollection_List(t *testing.T) {
 func TestCollection_Delete(t *testing.T) {
 	client := NewClient(defaultURL)
 	field := "value_" + time.Now().Format(time.StampMilli)
-	collection := Collection[any]{client, migrations.PostsPublic, client.url + "/api/collections/" + "collectionname"}
+	collection := client.Collection(migrations.PostsPublic)
 
 	// delete non-existing item
 	err := collection.Delete("non_existing_id")
@@ -161,7 +161,7 @@ func TestCollection_Delete(t *testing.T) {
 func TestCollection_Update(t *testing.T) {
 	client := NewClient(defaultURL)
 	field := "value_" + time.Now().Format(time.StampMilli)
-	collection := Collection[map[string]any]{client, migrations.PostsPublic, client.url + "/api/collections/collectionname"}
+	collection := client.Collection(migrations.PostsPublic)
 
 	// update non-existing item
 	err := collection.Update("non_existing_id", map[string]any{
@@ -205,7 +205,7 @@ func TestCollection_Create(t *testing.T) {
 		name       string
 		client     *Client
 		collection string
-		body       any
+		body       map[string]any
 		wantErr    bool
 		wantID     bool
 	}{
@@ -241,7 +241,7 @@ func TestCollection_Create(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			collection := Collection[any]{tt.client, tt.collection, defaultClient.url + "/api/collections/" + tt.collection}
+			collection := tt.client.Collection(tt.collection)
 			r, err := collection.Create(tt.body)
 			if tt.wantErr {
 				assert.Error(t, err)

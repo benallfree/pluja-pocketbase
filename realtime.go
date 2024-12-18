@@ -24,7 +24,7 @@ type (
 	RealtimeConnectionManager struct {
 		client            *Client
 		once              sync.Once
-		stream            *multicast.Channel[Event]
+		stream            *multicast.Channel[*Event]
 		counter           atomic.Int64
 		targets           sync.Map
 		mergedTargets     []string
@@ -53,7 +53,7 @@ type (
 func NewRealtimeConnectionManager(client *Client) *RealtimeConnectionManager {
 	return &RealtimeConnectionManager{
 		client:        client,
-		stream:        multicast.New[Event](),
+		stream:        multicast.New[*Event](),
 		counter:       atomic.Int64{},
 		targets:       sync.Map{},
 		typeFactories: sync.Map{},
@@ -118,7 +118,7 @@ func (r *RealtimeConnectionManager) Subscribe(collectionName string, targets ...
 				r.dbg(fmt.Sprintf("received event: %+v", e))
 				if isRecordInTargetList(e.Record, targets) {
 					r.dbg("sending event to stream")
-					stream.C <- &e
+					stream.C <- e
 				}
 			}
 		}
@@ -264,7 +264,7 @@ func (r *RealtimeConnectionManager) handleSSEEvent(ev eventsource.Event) {
 	var e Event
 	r.dbg(fmt.Sprintf("SSE event: %+v", ev))
 	e.Error = json.Unmarshal([]byte(ev.Data()), &e)
-	r.stream.C <- e
+	r.stream.C <- &e
 }
 
 func isRecordInTargetList(record *map[string]any, targets []string) bool {

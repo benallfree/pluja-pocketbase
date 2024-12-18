@@ -159,10 +159,9 @@ func (c *Client) Get(path string, result any, onRequest func(*resty.Request), on
 }
 
 func (c *Client) Collection(name string) *Collection[map[string]any] {
-	return &Collection[map[string]any]{
-		Client: c,
-		Name:   name,
-	}
+	return NewCollectionWithFactory(c, name, func() map[string]any {
+		return make(map[string]any)
+	})
 }
 
 func (c *Client) AuthStore() authStore {
