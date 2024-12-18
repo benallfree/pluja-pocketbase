@@ -13,13 +13,23 @@ type Collection[T any] struct {
 	*Client
 	Name               string
 	BaseCollectionPath string
+	Factory            func() T
 }
 
-func CollectionSet[T any](client *Client, collection string) *Collection[T] {
+func NewCollection[T any](client *Client, collection string) *Collection[T] {
+	factory := func() T {
+		var v T
+		return v
+	}
+	return NewCollectionWithFactory(client, collection, factory)
+}
+
+func NewCollectionWithFactory[T any](client *Client, collection string, typeFactory func() T) *Collection[T] {
 	return &Collection[T]{
 		Client:             client,
 		Name:               collection,
 		BaseCollectionPath: client.url + "/api/collections/" + url.QueryEscape(collection),
+		Factory:            typeFactory,
 	}
 }
 
@@ -36,7 +46,7 @@ func (c *Collection[T]) Create(body T) (ResponseCreate, error) {
 		SetBody(body).
 		SetResult(&response)
 
-	resp, err := request.Post(c.url + "/api/collections/{collection}/records")
+	resp, err := request.Post(c.BaseCollectionPath + "/records")
 	if err != nil {
 		return response, fmt.Errorf("[create] can't send update request to pocketbase, err %w", err)
 	}
@@ -63,7 +73,7 @@ func (c *Collection[T]) Update(id string, body T) error {
 		SetPathParam("collection", c.Name).
 		SetBody(body)
 
-	resp, err := request.Patch(c.url + "/api/collections/{collection}/records/" + id)
+	resp, err := request.Patch(c.BaseCollectionPath + "/records/" + id)
 	if err != nil {
 		return fmt.Errorf("[update] can't send update request to pocketbase, err %w", err)
 	}
@@ -88,7 +98,7 @@ func (c *Collection[T]) Delete(id string) error {
 		SetPathParam("collection", c.Name).
 		SetPathParam("id", id)
 
-	resp, err := request.Delete(c.url + "/api/collections/{collection}/records/{id}")
+	resp, err := request.Delete(c.BaseCollectionPath + "/records/" + id)
 	if err != nil {
 		return fmt.Errorf("[delete] can't send delete request to pocketbase, err %w", err)
 	}
@@ -134,7 +144,7 @@ func (c *Collection[T]) List(params ParamsList) (ResponseList[T], error) {
 		request.SetQueryParam("fields", params.Fields)
 	}
 
-	resp, err := request.Get(c.url + "/api/collections/{collection}/records")
+	resp, err := request.Get(c.BaseCollectionPath + "/records")
 	if err != nil {
 		return response, fmt.Errorf("[list] can't send update request to pocketbase, err %w", err)
 	}
@@ -263,7 +273,7 @@ func (c *Collection[T]) OneWithParams(id string, params ParamsList) (T, error) {
 type TypedEvent[T any] struct {
 	Action string
 	Record T
-	Fields map[string]any
+	Fields *map[string]any
 	Error  error
 }
 
@@ -296,15 +306,22 @@ func (c *Collection[T]) Subscribe(targets ...string) (*TypedStream[T], error) {
 				log.Printf("can't marshal record: %v", err)
 				continue
 			}
-			typedRecord := new(T)
-			if err := json.Unmarshal(jsonBytes, typedRecord); err != nil {
+			log.Printf("jsonBytes: %s", string(jsonBytes))
+
+			if c.Factory == nil {
+				panic("Factory is nil")
+			}
+
+			typedRecord := c.Factory()
+			if err := json.Unmarshal(jsonBytes, &typedRecord); err != nil {
 				log.Printf("can't unmarshal record: %v", err)
 				continue
 			}
+			log.Printf("unmarshalled record: %+v", typedRecord)
 			typedEvent := TypedEvent[T]{
 				Action: e.Action,
-				Record: *typedRecord,
-				Fields: *e.Record,
+				Record: typedRecord,
+				Fields: e.Record,
 				Error:  e.Error,
 			}
 			stream.C <- &typedEvent
