@@ -3,7 +3,10 @@ package pocketbase
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/url"
+
+	"github.com/go-resty/resty/v2"
 )
 
 type (
@@ -35,6 +38,9 @@ func (c *Collection[T]) ListAuthMethods22() (AuthMethod, error) {
 	request := c.client.R().
 		SetHeader("Content-Type", "application/json")
 
+	request.AddRetryCondition(func(response *resty.Response, err error) bool {
+		return response.StatusCode() == http.StatusTooManyRequests || response.StatusCode() == http.StatusGatewayTimeout
+	})
 	resp, err := request.Get(c.BaseCollectionPath + "/auth-methods")
 	if err != nil {
 		return response, fmt.Errorf("[records] can't send ListAuthMethods request to pocketbase, err %w", err)
