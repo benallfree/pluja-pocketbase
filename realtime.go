@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -71,20 +72,27 @@ func (r *RealtimeConnectionManager) init() {
 }
 
 type QueryOptions struct {
-	Fields []string
-	Filter string
-	Sort   string
-	Limit  int
-	Offset int
+	Fields  string `json:"fields,omitempty"`
+	Filter  string `json:"filter,omitempty"`
+	Sort    string `json:"sort,omitempty"`
+	Page    int    `json:"page,omitempty"`
+	PerPage int    `json:"perPage,omitempty"`
 }
 
 type TargetOptions struct {
-	Query QueryOptions
+	Query QueryOptions `json:"query,omitempty"`
 }
 
 func WithFields(fields ...string) TargetOptionMaker {
 	return func(o *TargetOptions) {
-		o.Query.Fields = fields
+		// Required fields for realtime functionality
+		allFields := append([]string{"id", "collectionName", "collectionId"}, fields...)
+
+		// Sort and remove duplicates
+		slices.Sort(allFields)
+		allFields = slices.Compact(allFields)
+
+		o.Query.Fields = strings.Join(allFields, ",")
 	}
 }
 
@@ -97,7 +105,7 @@ func WithTarget(name string, options ...TargetOptionMaker) string {
 	}
 
 	// Marshal query options to JSON
-	queryJSON, err := json.Marshal(opts.Query)
+	queryJSON, err := json.Marshal(opts)
 	if err != nil {
 		// In case of error, return unmodified name
 		return name
