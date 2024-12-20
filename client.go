@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/caarlos0/env/v11"
@@ -21,12 +23,13 @@ type EnvConfig struct {
 
 type (
 	Client struct {
-		client          *resty.Client
-		url             string
-		authorizer      authStore
-		token           string
-		restDebug       bool
-		realtimeManager *RealtimeConnectionManager
+		client               *resty.Client
+		url                  string
+		authorizer           authStore
+		token                string
+		restDebug            bool
+		realtimeManager      *RealtimeConnectionManager
+		globalRequestOptions []func(*resty.Request)
 	}
 	ClientOption  func(*Client)
 	RequestOption func(*resty.Request)
@@ -45,9 +48,10 @@ func NewClient(url string, opts ...ClientOption) *Client {
 		SetRetryMaxWaitTime(10 * time.Second)
 
 	c := &Client{
-		client:     client,
-		url:        url,
-		authorizer: authorizeNoOp{},
+		client:               client,
+		url:                  url,
+		authorizer:           authorizeNoOp{},
+		globalRequestOptions: []func(*resty.Request){},
 	}
 	c.realtimeManager = NewRealtimeConnectionManager(c)
 
@@ -121,8 +125,28 @@ func WithUserToken(token string) ClientOption {
 	}
 }
 
+func WithStatusCodeRetryCondition(codes ...int) ClientOption {
+	return func(c *Client) {
+		c.AddRequestOption(func(req *resty.Request) {
+			req.AddRetryCondition(func(response *resty.Response, err error) bool {
+				shouldRetry := slices.Contains(codes, response.StatusCode())
+				if shouldRetry {
+					slog.Debug(fmt.Sprintf("retry condition met: %v", response.StatusCode()))
+				} else {
+					slog.Debug(fmt.Sprintf("retry condition not met: %v", response.StatusCode()))
+				}
+				return shouldRetry
+			})
+		})
+	}
+}
+
 func (c *Client) Authorize() error {
 	return c.authorizer.authorize()
+}
+
+func (c *Client) AddRequestOption(option func(*resty.Request)) {
+	c.globalRequestOptions = append(c.globalRequestOptions, option)
 }
 
 func (c *Client) Get(path string, result any, onRequest func(*resty.Request), onResponse func(*resty.Response)) error {
@@ -130,7 +154,7 @@ func (c *Client) Get(path string, result any, onRequest func(*resty.Request), on
 		return err
 	}
 
-	request := c.client.R().
+	request := c.Request().
 		SetHeader("Content-Type", "application/json")
 	if onRequest != nil {
 		onRequest(request)
@@ -190,6 +214,9 @@ func (c *Client) Subscribe(collectionName string, targets ...string) (*EventStre
 
 func (c *Client) Request(modifiers ...RequestOption) *resty.Request {
 	req := c.client.R()
+	for _, option := range c.globalRequestOptions {
+		option(req)
+	}
 	for _, modifier := range modifiers {
 		modifier(req)
 	}
