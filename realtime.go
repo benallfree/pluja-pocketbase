@@ -333,6 +333,12 @@ func (r *RealtimeConnectionManager) connectToRealtime() {
 }
 
 func isRecordInTargetList(record *map[string]any, targets []string) bool {
+	// Strip query parameters from targets
+	strippedTargets := make([]string, len(targets))
+	for i, target := range targets {
+		strippedTargets[i] = strings.Split(target, "?")[0]
+	}
+	targets = strippedTargets
 	log.Printf("checking record: %+v for targets: %+v\n", record, targets)
 	collectionName, ok := (*record)["collectionName"].(string)
 	if !ok {
