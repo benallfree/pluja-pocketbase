@@ -31,7 +31,7 @@ type (
 		targets                       sync.Map
 		connectionRestartNeededSignal chan error
 		targetsDirtySignal            chan bool
-		realtimeConnectedSignal       chan bool
+		realtimeConnectionReadySignal chan bool
 		mergedTargets                 []string
 		mergedTargetsLock             sync.RWMutex
 		clientID                      string
@@ -63,7 +63,7 @@ func NewRealtimeConnectionManager(client *Client) *RealtimeConnectionManager {
 		typeFactories:                 sync.Map{},
 		targetsDirtySignal:            make(chan bool, 1),
 		connectionRestartNeededSignal: make(chan error, 1),
-		realtimeConnectedSignal:       make(chan bool, 1),
+		realtimeConnectionReadySignal: make(chan bool, 1),
 	}
 }
 
@@ -169,7 +169,7 @@ func (r *RealtimeConnectionManager) Subscribe(collectionName string, targets ...
 					panic("evergreen channel is closed")
 				}
 				r.dbg(fmt.Sprintf("received event: %+v", e))
-				if isRecordInTargetList(e.Record, targets) {
+				if r.isRecordInTargetList(e.Record, targets) {
 					r.dbg("sending event to stream")
 					stream.C <- e
 				}
@@ -260,22 +260,31 @@ func (r *RealtimeConnectionManager) dbg(msg string) error {
 func (r *RealtimeConnectionManager) startContinuousRealtimeConnection() {
 
 	// Continue with reconnection loop
-eventLoop:
 	for {
+		r.dbg("starting realtime connection")
 		go r.connectToRealtime()
-		<-r.realtimeConnectedSignal
-		for {
-			r.dbg("main event loop")
-			select {
-			case <-r.targetsDirtySignal:
-				r.dbg("targetsDirtySignal received, updating subscriptions")
-				r.updateRealtimeSubscription()
-			case err := <-r.connectionRestartNeededSignal:
-				r.dbg(fmt.Sprintf("connectionRestartNeededSignal received, restarting connection: %v", err))
-				break eventLoop
+		select {
+		case <-r.realtimeConnectionReadySignal:
+			r.dbg("realtime connection ready")
+			r.updateRealtimeSubscription()
+		eventLoop:
+			for {
+				r.dbg("main event loop")
+				select {
+				case <-r.targetsDirtySignal:
+					r.dbg("targetsDirtySignal received, updating subscriptions")
+					r.updateRealtimeSubscription()
+				case err := <-r.connectionRestartNeededSignal:
+					r.dbg(fmt.Sprintf("connectionRestartNeededSignal received, restarting connection: %v", err))
+					break eventLoop
+				}
 			}
+		case err := <-r.connectionRestartNeededSignal:
+			r.dbg(fmt.Sprintf("connectionRestartNeededSignal received, restarting connection: %v", err))
 		}
+
 	}
+	r.dbg("exiting realtime connection loop")
 }
 
 func (r *RealtimeConnectionManager) connectToRealtime() {
@@ -316,7 +325,7 @@ func (r *RealtimeConnectionManager) connectToRealtime() {
 
 	r.dbg("setting clientID to " + initEvent.ClientID)
 	r.clientID = initEvent.ClientID
-	r.realtimeConnectedSignal <- true
+	r.realtimeConnectionReadySignal <- true
 	for {
 		r.dbg("awaiting raw events in loop")
 		ev, err := d.Decode()
@@ -332,14 +341,14 @@ func (r *RealtimeConnectionManager) connectToRealtime() {
 	}
 }
 
-func isRecordInTargetList(record *map[string]any, targets []string) bool {
+func (r *RealtimeConnectionManager) isRecordInTargetList(record *map[string]any, targets []string) bool {
 	// Strip query parameters from targets
 	strippedTargets := make([]string, len(targets))
 	for i, target := range targets {
 		strippedTargets[i] = strings.Split(target, "?")[0]
 	}
 	targets = strippedTargets
-	log.Printf("checking record: %+v for targets: %+v\n", record, targets)
+	r.dbg(fmt.Sprintf("checking record: %+v for targets: %+v\n", record, targets))
 	collectionName, ok := (*record)["collectionName"].(string)
 	if !ok {
 		return false
