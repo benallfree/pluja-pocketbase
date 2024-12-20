@@ -252,7 +252,7 @@ func (r *RealtimeConnectionManager) updateRealtimeSubscription() error {
 
 func (r *RealtimeConnectionManager) Dbg(msg string) error {
 	if r.debug {
-		slog.Debug("dbg", "message", msg)
+		slog.Debug(msg)
 	}
 	return nil
 }
