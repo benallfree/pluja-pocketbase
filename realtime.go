@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"slices"
@@ -116,7 +116,7 @@ func WithTarget(name string, options ...TargetOptionMaker) string {
 }
 
 func (r *RealtimeConnectionManager) Subscribe(collectionName string, targets ...string) (*EventStream, error) {
-	r.dbg("Top of Subscribe")
+	r.Dbg("Top of Subscribe")
 	r.once.Do(r.init)
 	if len(targets) == 0 {
 		targets = []string{collectionName}
@@ -126,13 +126,13 @@ func (r *RealtimeConnectionManager) Subscribe(collectionName string, targets ...
 			targets[i] = collectionName
 		}
 	}
-	r.dbg(fmt.Sprintf("subscribing to %s: %+v", collectionName, targets))
+	r.Dbg(fmt.Sprintf("subscribing to %s: %+v", collectionName, targets))
 
 	subscriptionID, err := r.addTarget(collectionName, targets...)
 	if err != nil {
 		return nil, err
 	}
-	r.dbg(fmt.Sprintf("subscriptionID: %s", subscriptionID))
+	r.Dbg(fmt.Sprintf("subscriptionID: %s", subscriptionID))
 
 	closed := make(chan bool)
 	c := make(chan *Event)
@@ -140,12 +140,12 @@ func (r *RealtimeConnectionManager) Subscribe(collectionName string, targets ...
 		C: c,
 		Unsubscribe: func() {
 			r.removeTarget(subscriptionID)
-			r.dbg("sending closed signal")
+			r.Dbg("sending closed signal")
 			closed <- true
 			for {
 				_, ok := <-c
 				if !ok {
-					r.dbg("real channel is closed from unsubscribe")
+					r.Dbg("real channel is closed from unsubscribe")
 					return
 				}
 			}
@@ -154,23 +154,23 @@ func (r *RealtimeConnectionManager) Subscribe(collectionName string, targets ...
 
 	go func() {
 		defer func() {
-			r.dbg("closing channel")
+			r.Dbg("closing channel")
 			close(stream.C)
 		}()
 		l := r.stream.Listen()
-		r.dbg("listening for events")
+		r.Dbg("listening for events")
 		for {
 			select {
 			case <-closed:
-				r.dbg("channel is closed from unsubscribe")
+				r.Dbg("channel is closed from unsubscribe")
 				return
 			case e, ok := <-l.C:
 				if !ok {
 					panic("evergreen channel is closed")
 				}
-				r.dbg(fmt.Sprintf("received event: %+v", e))
+				r.Dbg(fmt.Sprintf("received event: %+v", e))
 				if r.isRecordInTargetList(e.Record, targets) {
-					r.dbg("sending event to stream")
+					r.Dbg("sending event to stream")
 					stream.C <- e
 				}
 			}
@@ -195,23 +195,23 @@ func (r *RealtimeConnectionManager) recalcMergedTargets() {
 		return true
 	})
 	slices.Sort(mergedTargets)
-	r.dbg(fmt.Sprintf("recalculated mergedTargets: %+v\n", mergedTargets))
+	r.Dbg(fmt.Sprintf("recalculated mergedTargets: %+v\n", mergedTargets))
 	r.mergedTargets = mergedTargets
 
 	// Compare and signal if different
 	if !slices.Equal(oldTargets, mergedTargets) {
-		r.dbg("targets changed, sending targetsDirtySignal")
+		r.Dbg("targets changed, sending targetsDirtySignal")
 		select {
 		case r.targetsDirtySignal <- true:
-			r.dbg("sent targets dirty signal")
+			r.Dbg("sent targets dirty signal")
 		default:
-			r.dbg("targets dirty signal channel full, skipping")
+			r.Dbg("targets dirty signal channel full, skipping")
 		}
 	}
 }
 
 func (r *RealtimeConnectionManager) addTarget(collectionName string, targets ...string) (string, error) {
-	r.dbg(fmt.Sprintf("adding targets to %s: %+v", collectionName, targets))
+	r.Dbg(fmt.Sprintf("adding targets to %s: %+v", collectionName, targets))
 
 	subscriptionID := fmt.Sprintf("%s_%d", collectionName, r.counter.Add(1))
 	r.targets.Store(subscriptionID, targets)
@@ -222,7 +222,7 @@ func (r *RealtimeConnectionManager) addTarget(collectionName string, targets ...
 }
 
 func (r *RealtimeConnectionManager) removeTarget(subscriptionID string) {
-	r.dbg(fmt.Sprintf("removing target: %s", subscriptionID))
+	r.Dbg(fmt.Sprintf("removing target: %s", subscriptionID))
 	r.targets.Delete(subscriptionID)
 	r.recalcMergedTargets()
 }
@@ -230,10 +230,10 @@ func (r *RealtimeConnectionManager) removeTarget(subscriptionID string) {
 func (r *RealtimeConnectionManager) updateRealtimeSubscription() error {
 	r.once.Do(r.startContinuousRealtimeConnection)
 
-	r.dbg("updating subscriptions")
+	r.Dbg("updating subscriptions")
 	r.mergedTargetsLock.RLock()
 	defer r.mergedTargetsLock.RUnlock()
-	r.dbg(fmt.Sprintf("updating realtime subscription: %+v", r.mergedTargets))
+	r.Dbg(fmt.Sprintf("updating realtime subscription: %+v", r.mergedTargets))
 
 	s := SubscriptionsSet{
 		ClientID:      r.clientID,
@@ -250,9 +250,9 @@ func (r *RealtimeConnectionManager) updateRealtimeSubscription() error {
 	return nil
 }
 
-func (r *RealtimeConnectionManager) dbg(msg string) error {
+func (r *RealtimeConnectionManager) Dbg(msg string) error {
 	if r.debug {
-		log.Printf("dbg: %s", msg)
+		slog.Debug(msg)
 	}
 	return nil
 }
@@ -261,37 +261,37 @@ func (r *RealtimeConnectionManager) startContinuousRealtimeConnection() {
 
 	// Continue with reconnection loop
 	for {
-		r.dbg("starting realtime connection")
+		r.Dbg("starting realtime connection")
 		go r.connectToRealtime()
 		select {
 		case <-r.realtimeConnectionReadySignal:
-			r.dbg("realtime connection ready")
+			r.Dbg("realtime connection ready")
 			r.updateRealtimeSubscription()
 		eventLoop:
 			for {
-				r.dbg("main event loop")
+				r.Dbg("main event loop")
 				select {
 				case <-r.targetsDirtySignal:
-					r.dbg("targetsDirtySignal received, updating subscriptions")
+					r.Dbg("targetsDirtySignal received, updating subscriptions")
 					r.updateRealtimeSubscription()
 				case err := <-r.connectionRestartNeededSignal:
-					r.dbg(fmt.Sprintf("connectionRestartNeededSignal received, restarting connection: %v", err))
+					r.Dbg(fmt.Sprintf("connectionRestartNeededSignal received, restarting connection: %v", err))
 					break eventLoop
 				}
 			}
 		case err := <-r.connectionRestartNeededSignal:
-			r.dbg(fmt.Sprintf("connectionRestartNeededSignal received, restarting connection: %v", err))
+			r.Dbg(fmt.Sprintf("connectionRestartNeededSignal received, restarting connection: %v", err))
 		}
 
 	}
-	r.dbg("exiting realtime connection loop")
+	r.Dbg("exiting realtime connection loop")
 }
 
 func (r *RealtimeConnectionManager) connectToRealtime() {
-	r.dbg("connectToRealtime")
+	r.Dbg("connectToRealtime")
 	ctx, cancel := context.WithCancel(context.Background())
 
-	r.dbg("sending request")
+	r.Dbg("sending request")
 	req := r.client.Request(WithContext(ctx), WithDoNotParseResponse(true))
 	resp, respErr := req.Get(r.client.BaseUrl() + "/api/realtime")
 	if respErr != nil {
@@ -300,7 +300,7 @@ func (r *RealtimeConnectionManager) connectToRealtime() {
 		return
 	}
 
-	r.dbg("decoding response")
+	r.Dbg("decoding response")
 	d := eventsource.NewDecoder(resp.RawBody())
 	ev, decodeErr := d.Decode()
 	if decodeErr != nil {
@@ -308,14 +308,14 @@ func (r *RealtimeConnectionManager) connectToRealtime() {
 		cancel()
 		return
 	}
-	r.dbg("checking event")
+	r.Dbg("checking event")
 	if event := ev.Event(); event != "PB_CONNECT" {
 		r.connectionRestartNeededSignal <- fmt.Errorf("first event must be PB_CONNECT, but got %s", event)
 		cancel()
 		return
 	}
 
-	r.dbg("unmarshalling init event")
+	r.Dbg("unmarshalling init event")
 	var initEvent InitEvent[map[string]any]
 	if err := json.Unmarshal([]byte(ev.Data()), &initEvent); err != nil {
 		r.connectionRestartNeededSignal <- fmt.Errorf("failed to unmarshal init event: %w", err)
@@ -323,11 +323,11 @@ func (r *RealtimeConnectionManager) connectToRealtime() {
 		return
 	}
 
-	r.dbg("setting clientID to " + initEvent.ClientID)
+	r.Dbg("setting clientID to " + initEvent.ClientID)
 	r.clientID = initEvent.ClientID
 	r.realtimeConnectionReadySignal <- true
 	for {
-		r.dbg("awaiting raw events in loop")
+		r.Dbg("awaiting raw events in loop")
 		ev, err := d.Decode()
 		if err != nil {
 			r.connectionRestartNeededSignal <- fmt.Errorf("error decoding event: %v", err)
@@ -335,7 +335,7 @@ func (r *RealtimeConnectionManager) connectToRealtime() {
 			return
 		}
 		var e Event
-		r.dbg(fmt.Sprintf("SSE event: %+v", ev))
+		r.Dbg(fmt.Sprintf("SSE event: %+v", ev))
 		e.Error = json.Unmarshal([]byte(ev.Data()), &e)
 		r.stream.C <- &e
 	}
@@ -348,7 +348,7 @@ func (r *RealtimeConnectionManager) isRecordInTargetList(record *map[string]any,
 		strippedTargets[i] = strings.Split(target, "?")[0]
 	}
 	targets = strippedTargets
-	r.dbg(fmt.Sprintf("checking record: %+v for targets: %+v\n", record, targets))
+	r.Dbg(fmt.Sprintf("checking record: %+v for targets: %+v\n", record, targets))
 	collectionName, ok := (*record)["collectionName"].(string)
 	if !ok {
 		return false

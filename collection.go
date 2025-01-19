@@ -3,7 +3,6 @@ package pocketbase
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/url"
 
 	"github.com/duke-git/lancet/v2/convertor"
@@ -297,16 +296,16 @@ func (c *Collection[T]) Subscribe(targets ...string) (*TypedStream[T], error) {
 
 	go func() {
 		defer func() {
-			log.Printf("closing typed channel")
+			c.Client.realtimeManager.Dbg("closing typed channel")
 			close(stream.C)
 		}()
 		for e := range eventStream.C {
 			jsonBytes, err := json.Marshal(e.Record)
 			if err != nil {
-				log.Printf("can't marshal record: %v", err)
+				c.Client.realtimeManager.Dbg(fmt.Sprintf("can't marshal record: %v", err))
 				continue
 			}
-			log.Printf("jsonBytes: %s", string(jsonBytes))
+			c.Client.realtimeManager.Dbg(fmt.Sprintf("record data: %s", string(jsonBytes)))
 
 			if c.Factory == nil {
 				panic("Factory is nil")
@@ -314,10 +313,10 @@ func (c *Collection[T]) Subscribe(targets ...string) (*TypedStream[T], error) {
 
 			typedRecord := c.Factory()
 			if err := json.Unmarshal(jsonBytes, &typedRecord); err != nil {
-				log.Printf("can't unmarshal record: %v", err)
+				c.Client.realtimeManager.Dbg(fmt.Sprintf("can't unmarshal record: %v", err))
 				continue
 			}
-			log.Printf("unmarshalled record: %+v", typedRecord)
+			c.Client.realtimeManager.Dbg(fmt.Sprintf("unmarshalled record: %+v", typedRecord))
 			typedEvent := TypedEvent[T]{
 				Action: e.Action,
 				Record: typedRecord,
